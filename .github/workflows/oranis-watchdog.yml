@@ -1,7 +1,7 @@
 name: oranis-watchdog
 on:
   schedule:
-    - cron: '*/15 * * * *'   # every 15 min — keep the engine alive
+    - cron: '*/15 * * * *'
   workflow_dispatch:
 concurrency:
   group: oranis-watchdog
@@ -10,43 +10,22 @@ jobs:
   watch:
     runs-on: ubuntu-latest
     continue-on-error: true
-    timeout-minutes: 10
+    timeout-minutes: 8
     steps:
-      - name: Health check + re-kick if stalled / kill if hung
+      - name: Re-kick engine if the chain has stalled
         continue-on-error: true
         env:
           GH_PAT: ${{ secrets.GH_PAT }}
         run: |
-          api() { curl -s -H "Authorization: Bearer $GH_PAT" -H "Accept: application/vnd.github+json" "$@"; }
-          ENG=dhruv1sarnot-maker/oranis-autopilot
-          REPO=dhruv1sarnot-maker/ai-organism
-          # 1) DONE? stand down.
-          CODE=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $GH_PAT" "https://api.github.com/repos/$REPO/contents/.oranis-autopilot/DONE?ref=oranis-perfection")
-          if [ "$CODE" = "200" ]; then echo "engine DONE — watchdog idle"; exit 0; fi
-          # 2) inspect recent perfect runs
-          RUNS=$(api "https://api.github.com/repos/$ENG/actions/workflows/oranis-perfect.yml/runs?per_page=8")
-          echo "$RUNS" > /tmp/runs.json
-          python3 - <<'PY'
-import json,datetime,os,urllib.request
-rs=json.load(open('/tmp/runs.json')).get('workflow_runs',[])
-now=datetime.datetime.now(datetime.timezone.utc)
-active=[r for r in rs if r['status'] in ('in_progress','queued','waiting')]
-# kill a hung run (>340 min in progress)
-PAT=os.environ['GH_PAT']
-def post(url,data=b''):
-    req=urllib.request.Request(url,data=data,method='POST',headers={'Authorization':f'Bearer {PAT}','Accept':'application/vnd.github+json'})
-    try: urllib.request.urlopen(req)
-    except Exception as e: print('post err',e)
-hung=0
-for r in active:
-    st=datetime.datetime.fromisoformat(r['run_started_at'].replace('Z','+00:00')) if r.get('run_started_at') else now
-    mins=(now-st).total_seconds()/60
-    if r['status']=='in_progress' and mins>340:
-        print('killing hung run',r['id'],int(mins),'min'); post(f"https://api.github.com/repos/dhruv1sarnot-maker/oranis-autopilot/actions/runs/{r['id']}/cancel"); hung+=1
-live=[r for r in active if not (r['status']=='in_progress' and (now-(datetime.datetime.fromisoformat(r['run_started_at'].replace('Z','+00:00')) if r.get('run_started_at') else now)).total_seconds()/60>340)]
-if live:
-    print(f"engine healthy ({len(live)} active run(s)) — no action")
-else:
-    print("engine idle + not DONE -> re-kicking the chain")
-    post("https://api.github.com/repos/dhruv1sarnot-maker/oranis-autopilot/actions/workflows/oranis-perfect.yml/dispatches", json.dumps({"ref":"main"}).encode())
-PY
+          set +e
+          AIORG="https://api.github.com/repos/dhruv1sarnot-maker/ai-organism"
+          ENG="https://api.github.com/repos/dhruv1sarnot-maker/oranis-autopilot/actions/workflows/oranis-perfect.yml"
+          DONE=$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $GH_PAT" "$AIORG/contents/.oranis-autopilot/DONE?ref=oranis-perfection")
+          if [ "$DONE" = "200" ]; then echo "engine DONE — standing down"; exit 0; fi
+          ACTIVE=$(curl -s -H "Authorization: Bearer $GH_PAT" "$ENG/runs?per_page=20&status=in_progress" | python3 -c 'import sys,json;print(len(json.load(sys.stdin).get("workflow_runs",[])))')
+          QUEUED=$(curl -s -H "Authorization: Bearer $GH_PAT" "$ENG/runs?per_page=20&status=queued"      | python3 -c 'import sys,json;print(len(json.load(sys.stdin).get("workflow_runs",[])))')
+          echo "active=$ACTIVE queued=$QUEUED"
+          if [ "${ACTIVE:-0}" -gt 0 ] || [ "${QUEUED:-0}" -gt 0 ]; then echo "engine alive — healthy"; exit 0; fi
+          echo "engine idle + not DONE -> re-kicking the chain"
+          curl -s -X POST -H "Authorization: Bearer $GH_PAT" -H "Accept: application/vnd.github+json" "$ENG/dispatches" -d '{"ref":"main"}'
+          exit 0
