@@ -29,7 +29,9 @@ jobs:
         continue-on-error: true
         if: steps.dc.outputs.done == 'false'
         uses: actions/setup-node@v4
-        with: { node-version: '20' }
+        with:
+          node-version: '20'
+          cache: npm
       - name: Install deps + Claude Code
         continue-on-error: true
         if: steps.dc.outputs.done == 'false'
