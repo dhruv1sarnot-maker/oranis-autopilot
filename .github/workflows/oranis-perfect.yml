@@ -13,12 +13,10 @@ jobs:
     steps:
       - name: Clone ai-organism (perfection branch)
         run: |
-          git clone --depth 80 https://x-access-token:${{ secrets.GH_PAT }}@github.com/dhruv1sarnot-maker/ai-organism.git repo
+          git clone --depth 80 --branch oranis-perfection https://x-access-token:${{ secrets.GH_PAT }}@github.com/dhruv1sarnot-maker/ai-organism.git repo
           cd repo
           git config user.name "oranis-autopilot"
           git config user.email "autopilot@oranis.ai"
-          git fetch origin oranis-perfection
-          git checkout oranis-perfection
       - name: Stop if DONE
         id: dc
         run: |
