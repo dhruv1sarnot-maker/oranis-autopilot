@@ -42,11 +42,37 @@ jobs:
         run: |
           cd repo
           timeout 17400 claude -p "$(cat .oranis-autopilot/TASK.md)" --dangerously-skip-permissions --max-turns 800 2>&1 | tail -120 || true
-      - name: Push progress
+      - name: Self-review gates + auto-merge to main (continuous deploy)
         if: steps.dc.outputs.done == 'false'
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          IS_SANDBOX: '1'
         run: |
           cd repo
-          git push https://x-access-token:${{ secrets.GH_PAT }}@github.com/dhruv1sarnot-maker/ai-organism.git oranis-perfection || true
+          AUTH="https://x-access-token:${{ secrets.GH_PAT }}@github.com/dhruv1sarnot-maker/ai-organism.git"
+          git push "$AUTH" oranis-perfection || true
+          echo "=== merge gate: typecheck + schema-drift + build ==="
+          GATE=1
+          npm run typecheck || GATE=0
+          [ "$GATE" = "1" ] && { npm run verify:schema-drift || GATE=0; }
+          [ "$GATE" = "1" ] && { npm run build || GATE=0; }
+          if [ "$GATE" = "1" ]; then
+            echo "GATES GREEN -> merging oranis-perfection into main (auto-deploy)"
+            git fetch "$AUTH" main || true
+            git checkout -B main FETCH_HEAD || git checkout -B main origin/main || true
+            if git merge oranis-perfection --no-edit -m "autopilot: merge verified perfection chunk -> deploy"; then
+              git push "$AUTH" main && echo "MERGED + DEPLOYED" || echo "main push noop"
+            else
+              echo "merge conflict -> abort (next chunk resolves)"; git merge --abort || true
+            fi
+            git checkout oranis-perfection || true
+          else
+            echo "GATES RED -> NOT merging; live ORANIS untouched, next chunk fixes"
+          fi
+          true
       - name: Re-trigger next chunk (self-chain)
         if: steps.dc.outputs.done == 'false'
         run: |
