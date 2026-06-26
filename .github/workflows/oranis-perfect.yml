@@ -1,0 +1,58 @@
+name: oranis-perfect
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 */2 * * *'   # safety net: every 2h in case the self-chain ever breaks
+concurrency:
+  group: oranis-perfect
+  cancel-in-progress: false
+jobs:
+  perfect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 330     # ~5.5h backstop; Claude time-boxes each chunk well under this
+    steps:
+      - name: Clone ai-organism (perfection branch)
+        run: |
+          git clone --depth 80 https://x-access-token:${{ secrets.GH_PAT }}@github.com/dhruv1sarnot-maker/ai-organism.git repo
+          cd repo
+          git config user.name "oranis-autopilot"
+          git config user.email "autopilot@oranis.ai"
+          git fetch origin oranis-perfection
+          git checkout oranis-perfection
+      - name: Stop if DONE
+        id: dc
+        run: |
+          if [ -f repo/.oranis-autopilot/DONE ]; then echo "done=true" >> "$GITHUB_OUTPUT"; else echo "done=false" >> "$GITHUB_OUTPUT"; fi
+      - name: Setup node
+        if: steps.dc.outputs.done == 'false'
+        uses: actions/setup-node@v4
+        with: { node-version: '20' }
+      - name: Install deps + Claude Code
+        if: steps.dc.outputs.done == 'false'
+        run: |
+          cd repo && (npm ci --no-audit --no-fund || npm install --no-audit --no-fund)
+          npm i -g @anthropic-ai/claude-code
+      - name: Run one perfection chunk (headless Claude)
+        if: steps.dc.outputs.done == 'false'
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          IS_SANDBOX: '1'
+        run: |
+          cd repo
+          timeout 17400 claude -p "$(cat .oranis-autopilot/TASK.md)" --dangerously-skip-permissions --max-turns 800 2>&1 | tail -120 || true
+      - name: Push progress
+        if: steps.dc.outputs.done == 'false'
+        run: |
+          cd repo
+          git push https://x-access-token:${{ secrets.GH_PAT }}@github.com/dhruv1sarnot-maker/ai-organism.git oranis-perfection || true
+      - name: Re-trigger next chunk (self-chain)
+        if: steps.dc.outputs.done == 'false'
+        run: |
+          sleep 8
+          curl -s -X POST -H "Authorization: Bearer ${{ secrets.GH_PAT }}" -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/dhruv1sarnot-maker/oranis-autopilot/actions/workflows/oranis-perfect.yml/dispatches" \
+            -d '{"ref":"main"}' || true
