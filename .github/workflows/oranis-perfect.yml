@@ -48,7 +48,7 @@ jobs:
           IS_SANDBOX: '1'
         run: |
           cd repo
-          timeout 17400 claude -p "$(cat .oranis-autopilot/TASK.md)" --model claude-opus-4-8 --effort max --dangerously-skip-permissions --max-turns 800 2>&1 | tail -120 || true
+          timeout 17400 claude -p "$(cat .oranis-autopilot/TASK.md)" --model claude-opus-4-8 --effort max --dangerously-skip-permissions --max-turns 2500 2>&1 | tail -120 || true
       - name: Self-review gates + auto-merge to main (continuous deploy)
         continue-on-error: true
         if: steps.dc.outputs.done == 'false'
