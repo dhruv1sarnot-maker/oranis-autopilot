@@ -19,6 +19,7 @@ jobs:
           cd repo
           git config user.name "oranis-autopilot"
           git config user.email "autopilot@oranis.ai"
+          git rev-parse HEAD > /tmp/sha_start 2>/dev/null || echo none > /tmp/sha_start
       - name: Stop if DONE
         continue-on-error: true
         id: dc
@@ -84,7 +85,14 @@ jobs:
         continue-on-error: true
         if: steps.dc.outputs.done == 'false'
         run: |
-          sleep 8
-          curl -s -X POST -H "Authorization: Bearer ${{ secrets.GH_PAT }}" -H "Accept: application/vnd.github+json" \
-            "https://api.github.com/repos/dhruv1sarnot-maker/oranis-autopilot/actions/workflows/oranis-perfect.yml/dispatches" \
-            -d '{"ref":"main"}' || true
+          cd repo
+          NOW=$(git rev-parse oranis-perfection 2>/dev/null || echo x)
+          if [ "$NOW" != "$(cat /tmp/sha_start 2>/dev/null)" ]; then
+            echo "chunk committed work -> chain forward (use the Max window)"
+            sleep 8
+            curl -s -X POST -H "Authorization: Bearer ${{ secrets.GH_PAT }}" -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/dhruv1sarnot-maker/oranis-autopilot/actions/workflows/oranis-perfect.yml/dispatches" \
+              -d '{"ref":"main"}' || true
+          else
+            echo "no new commit (Max 5h window exhausted, or nothing to do) -> the 2h safety cron resumes after reset; zero progress lost (ledger persists)"
+          fi
