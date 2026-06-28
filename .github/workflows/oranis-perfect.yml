@@ -18,7 +18,7 @@ jobs:
           git clone --depth 80 --branch oranis-perfection https://x-access-token:${{ secrets.GH_PAT }}@github.com/dhruv1sarnot-maker/ai-organism.git repo
           cd repo
           git config user.name "oranis-autopilot"
-          git config user.email "autopilot@oranis.ai"
+          git config user.email "dhruv1sarnot@gmail.com"
           git rev-parse HEAD > /tmp/sha_start 2>/dev/null || echo none > /tmp/sha_start
       - name: Stop if DONE
         continue-on-error: true
