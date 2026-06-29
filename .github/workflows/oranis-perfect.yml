@@ -1,6 +1,8 @@
 name: oranis-perfect
 on:
   workflow_dispatch:
+  schedule:
+    - cron: '*/30 * * * *'
 concurrency:
   group: oranis-perfect
   cancel-in-progress: false
